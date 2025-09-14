@@ -38,6 +38,11 @@ let isRecognizing = false;
 let selectedSectionId = null;
 let currentStudent = null;
 let schoolId = null;
+let lateThresholdTime = null; 
+
+// Caching
+const recentlyMarkedCache = new Map(); // In-memory cache for recently marked students
+const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
 // ====================================================
 // INITIALIZATION
@@ -56,6 +61,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   populateClassDropdown();
   
   document.getElementById('logout-btn').addEventListener('click', async () => {
+    sessionStorage.clear(); // Clear cache on logout
     await db.auth.signOut();
     window.location.href = '/attd-log.html';
   });
@@ -72,9 +78,17 @@ function setupEventListeners() {
 }
 
 // ====================================================
-// SETUP FLOW
+// SETUP FLOW WITH CACHING
 // ====================================================
 async function populateClassDropdown() {
+    const cacheKey = `school_${schoolId}_classes`;
+    const cachedClasses = sessionStorage.getItem(cacheKey);
+
+    if (cachedClasses) {
+        selectClass.innerHTML = cachedClasses;
+        return;
+    }
+
     const { data: { user } } = await db.auth.getUser();
     const { data: schoolData, error: schoolError } = await db.from('schools').select('id').eq('user_id', user.id).single();
     if (schoolError || !schoolData) {
@@ -88,32 +102,61 @@ async function populateClassDropdown() {
         showNotification('Failed to load classes', 'error');
         return;
     }
-    selectClass.innerHTML = '<option value="">Select a Class</option>' + data.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    const optionsHtml = '<option value="">Select a Class</option>' + data.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    selectClass.innerHTML = optionsHtml;
+    sessionStorage.setItem(cacheKey, optionsHtml); // Store in cache
 }
 
 async function populateSectionDropdown(classId) {
     selectSection.innerHTML = '<option value="">Loading...</option>';
     selectSection.disabled = true;
     startSessionBtn.disabled = true;
+
     if (!classId) {
         selectSection.innerHTML = '<option value="">Select a class first</option>';
         return;
     }
+
+    const cacheKey = `class_${classId}_sections`;
+    const cachedSections = sessionStorage.getItem(cacheKey);
+
+    if (cachedSections) {
+        selectSection.innerHTML = cachedSections;
+        selectSection.disabled = false;
+        return;
+    }
+
     const { data, error } = await db.from('sections').select('*').eq('class_id', classId).order('name');
     if (error) {
         showNotification('Failed to load sections', 'error');
         return;
     }
-    selectSection.innerHTML = '<option value="">Select a Section</option>' + data.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    const optionsHtml = '<option value="">Select a Section</option>' + data.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    selectSection.innerHTML = optionsHtml;
+    sessionStorage.setItem(cacheKey, optionsHtml); // Store in cache
     selectSection.disabled = false;
 }
 
-function startAttendanceSession() {
+async function startAttendanceSession() {
     selectedSectionId = selectSection.value;
     if (!selectedSectionId) {
         showNotification('Please select a section before starting.', 'error');
         return;
     }
+    recentlyMarkedCache.clear();
+
+    const { data, error } = await db.from('school_settings')
+        .select('setting_value')
+        .eq('school_id', schoolId)
+        .eq('setting_key', 'late_threshold_time')
+        .single();
+    
+    if (error) {
+        console.warn("Could not fetch late time setting. Defaulting to present.", error);
+    } else if (data) {
+        lateThresholdTime = data.setting_value;
+    }
+
     setupView.classList.add('hidden');
     cameraView.classList.remove('hidden');
     startCamera();
@@ -212,8 +255,14 @@ async function recognizeFace() {
 
             if (student && student.length > 0) {
                 const matchedStudent = student[0];
-                const today = new Date().toISOString().split('T')[0];
+                
+                // Check in-memory cache first
+                if (recentlyMarkedCache.has(matchedStudent.id) && (Date.now() - recentlyMarkedCache.get(matchedStudent.id) < CACHE_DURATION_MS)) {
+                    handleAlreadyMarked(matchedStudent);
+                    return;
+                }
 
+                const today = new Date().toISOString().split('T')[0];
                 const { data: attendanceRecord, error: attendanceError } = await db
                     .from('attendance')
                     .select('status')
@@ -222,11 +271,10 @@ async function recognizeFace() {
                     .in('status', ['present', 'late'])
                     .maybeSingle();
                 
-                if (attendanceError) {
-                    console.error("Error checking attendance status:", attendanceError);
-                }
+                if (attendanceError) console.error("Error checking attendance status:", attendanceError);
 
                 if (attendanceRecord) {
+                    recentlyMarkedCache.set(matchedStudent.id, Date.now()); // Update cache
                     handleAlreadyMarked(matchedStudent);
                 } else {
                     handleRecognitionSuccess(matchedStudent);
@@ -290,7 +338,21 @@ function handleIncorrectRecognition() {
 // ====================================================
 function confirmAndMark() {
     if (!currentStudent) return;
-    markAttendance(currentStudent.id, 'present');
+
+    let status = 'present'; 
+    
+    if (lateThresholdTime) {
+        const now = new Date();
+        const [hours, minutes] = lateThresholdTime.split(':');
+        const thresholdDate = new Date();
+        thresholdDate.setHours(hours, minutes, 0, 0);
+
+        if (now > thresholdDate) {
+            status = 'late';
+        }
+    }
+    
+    markAttendance(currentStudent.id, status);
 }
 
 async function markAttendance(studentId, status) {
@@ -311,6 +373,7 @@ async function markAttendance(studentId, status) {
         rejectBtn.disabled = false;
     } else {
         showNotification(`Marked ${currentStudent.name} as ${status}!`, 'success');
+        recentlyMarkedCache.set(studentId, Date.now()); // Add to cache on success
         updateStatusDisplay(status);
         setTimeout(() => {
             clearStudentInfo();
@@ -347,9 +410,12 @@ function updateStatusDisplay(status) {
     display.classList.remove('hidden');
     statusText.textContent = status.charAt(0).toUpperCase() + status.slice(1);
     statusTime.textContent = `Marked at ${new Date().toLocaleTimeString()}`;
-    if (status === 'present' || status === 'late') {
+    if (status === 'present') {
         display.className = 'p-4 rounded-xl text-center bg-green-100 border border-green-200 mt-4';
         statusText.className = 'text-lg font-bold text-green-800';
+    } else if (status === 'late') {
+        display.className = 'p-4 rounded-xl text-center bg-amber-100 border border-amber-200 mt-4';
+        statusText.className = 'text-lg font-bold text-amber-800';
     }
 }
 
@@ -360,4 +426,3 @@ window.addEventListener('beforeunload', () => {
     }
     stopRecognitionLoop();
 });
-
