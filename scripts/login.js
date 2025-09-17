@@ -7,6 +7,22 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+db.auth.onAuthStateChange((event, session) => {
+    // This event fires when the user is signed in after confirming their email
+    if (event === 'SIGNED_IN' && session) {
+        // Show a success message
+        const successDiv = document.getElementById('success-message'); // We will add this div in the HTML
+        if (successDiv) {
+            successDiv.textContent = 'Email confirmed successfully! Redirecting to the admin dashboard...';
+            successDiv.classList.remove('hidden');
+        }
+
+        // Redirect to the admin page after a short delay
+        setTimeout(() => {
+            window.location.href = '/admin.html';
+        }, 3000);
+    }
+});
 // ====================================================
 // DOM ELEMENTS
 // ====================================================
