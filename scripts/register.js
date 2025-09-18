@@ -173,25 +173,17 @@ form.addEventListener('submit', async (e) => {
   loadingIcon.classList.remove('hidden');
 
   try {
-    const { data: authData, error: authError } = await db.auth.signUp({
+    const { data, error } = await db.auth.signUp({
       email: inputs.email.value,
       password: inputs.password.value,
+      options: {
+          data: {
+              schoolName: inputs.schoolName.value
+          }
+      }
     });
 
-    if (authError) throw authError;
-    if (!authData.user) throw new Error("Registration failed, please try again.");
-
-    const { error: schoolError } = await db
-      .from('schools')
-      .insert({
-        name: inputs.schoolName.value,
-        email: inputs.email.value,
-        user_id: authData.user.id
-      });
-
-    if (schoolError) {
-      throw new Error(`Could not save school info: ${schoolError.message}`);
-    }
+    if (error) throw error;
 
     showNotification('Registration successful! Please check your email to verify your account. Redirecting...', 'success');
 

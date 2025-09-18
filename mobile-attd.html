@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Live Attendance Marking - AttendanceFlow</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#6366f1',
+            secondary: '#8b5cf6',
+            accent: '#06b6d4',
+          },
+        }
+      }
+    }
+  </script>
+  <style>
+    .glass-card {
+      backdrop-filter: blur(16px);
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    .camera-frame {
+      position: relative;
+      border: 3px solid #10b981;
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 0 30px rgba(16, 185, 129, 0.3);
+    }
+    .status-indicator {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      width: 12px;
+      height: 12px;
+      background: #10b981;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    .student-card {
+      background: linear-gradient(135deg, rgba(79, 70, 229, 0.05), rgba(124, 58, 237, 0.05));
+      border: 1px solid rgba(79, 70, 229, 0.1);
+    }
+    .btn-confirm {
+      background: linear-gradient(135deg, #10b981, #059669);
+      box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+    }
+    .btn-reject {
+      background-color: #f3f4f6;
+      border: 1px solid #d1d5db;
+      color: #374151;
+    }
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      padding: 12px 24px;
+      border-radius: 8px;
+      color: white;
+      font-weight: 600;
+      transform: translateX(400px);
+      transition: transform 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .notification.show {
+      transform: translateX(0);
+    }
+    .notification.success {
+      background: linear-gradient(135deg, #10b981, #059669);
+    }
+    .notification.error {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-gray-50">
+  <div id="notification-container"></div>
+  <div class="bg-white/80 backdrop-blur-lg border-b border-gray-200/50 sticky top-0 z-40">
+    <div class="container mx-auto px-4 py-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 bg-gradient-to-r from-primary to-secondary rounded-xl flex items-center justify-center shadow-lg">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+          </div>
+          <div>
+            <h1 class="text-lg font-bold text-gray-800">Live Attendance</h1>
+          </div>
+        </div>
+        <button id="logout-btn" class="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium">
+          Logout
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="container mx-auto px-4 py-6">
+    <div id="setup-view" class="max-w-md mx-auto glass-card rounded-2xl shadow-lg p-6 text-center">
+      <h2 class="text-xl font-bold text-gray-800 mb-2">Setup Session</h2>
+      <p class="text-gray-600 mb-4 text-sm">Select a class and section to begin.</p>
+      <div class="space-y-4">
+        <div>
+          <select id="select-class" class="w-full px-4 py-3 rounded-xl border-gray-200 bg-white text-base" required>
+            <option value="">Loading classes...</option>
+          </select>
+        </div>
+        <div>
+          <select id="select-section" class="w-full px-4 py-3 rounded-xl border-gray-200 bg-white text-base" required disabled>
+            <option value="">Select a class first</option>
+          </select>
+        </div>
+      </div>
+      <button id="start-session-btn" class="mt-6 w-full bg-gradient-to-r from-primary to-secondary text-white py-3 rounded-lg font-bold text-base transition-all disabled:opacity-50" disabled>
+        Start Session
+      </button>
+    </div>
+    <div id="camera-view" class="hidden">
+      <div class="flex flex-col gap-6">
+        <div class="camera-frame">
+          <video id="video" class="w-full h-auto bg-black object-cover" autoplay muted playsinline></video>
+          <div class="status-indicator" id="camera-status"></div>
+          <div class="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded-full text-xs font-medium">
+            <span id="recognition-status">Initializing...</span>
+          </div>
+        </div>
+        <p id="permission-error" class="text-sm text-red-600 mt-2 hidden"></p>
+        <div class="student-card rounded-2xl p-4">
+            <h3 class="text-base font-bold text-gray-800 mb-2">Student Information</h3>
+            <div class="space-y-2 text-sm">
+              <div class="flex justify-between items-center py-1 border-b"><span class="font-medium text-gray-600">Name:</span><span class="font-bold text-gray-800" id="student-name">--</span></div>
+              <div class="flex justify-between items-center py-1 border-b"><span class="font-medium text-gray-600">Class:</span><span class="font-bold text-gray-800" id="student-class">--</span></div>
+              <div class="flex justify-between items-center py-1 border-b"><span class="font-medium text-gray-600">Section:</span><span class="font-bold text-gray-800" id="student-section">--</span></div>
+              <div class="flex justify-between items-center py-1 border-b"><span class="font-medium text-gray-600">Roll No:</span><span class="font-bold text-gray-800" id="student-roll">--</span></div>
+              <div class="flex justify-between items-center py-1"><span class="font-medium text-gray-600">Date:</span><span class="font-semibold text-gray-700" id="current-date">--</span></div>
+            </div>
+            <div class="mt-4">
+              <div class="space-y-2">
+                <button id="confirm-attendance-btn" class="btn-confirm w-full text-white py-3 rounded-lg font-bold text-base flex items-center justify-center" disabled>
+                  <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  Confirm & Mark
+                </button>
+                <button id="reject-attendance-btn" class="btn-reject w-full text-gray-700 py-2 rounded-lg font-semibold text-sm flex items-center justify-center" disabled>
+                  <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                  Not Me
+                </button>
+              </div>
+              <div id="attendance-status" class="hidden p-3 rounded-lg text-center mt-3">
+                <span id="status-text" class="text-base font-bold">Status</span>
+                <p class="text-xs text-gray-600" id="status-time">Marked at --:--</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="scripts/mobile-attd.js"></script>
+</body>
+</html>
