@@ -3,7 +3,7 @@
 // ====================================================
 const SUPABASE_URL = 'https://samikiantytgcxlbtqnp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNhbWlraWFudHl0Z2N4bGJ0cW5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0MTU2NTMsImV4cCI6MjA3Mjk5MTY1M30.VDbliaiLO0km0UAAnJe0fejYHHVVgc5c_DCBrePW29I';
-const FACE_API_URL = 'http://localhost:5000'; // Replace with your actual face API URL
+const FACE_API_URL = ''; // Replace with your actual face API URL
 const RECOGNITION_INTERVAL = 2000; // ms between recognition attempts
 const SIMILARITY_THRESHOLD = 0.5; // Cosine similarity threshold for a match
 
