@@ -40,12 +40,19 @@ const passwordInput = document.getElementById('password');
 loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
 
-    const email = document.getElementById('email').value;
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const errorDiv = document.getElementById('error-message');
+    const resendDiv = document.getElementById('resend-verification');
+    const submitButton = document.getElementById('submitBtn');
+
+    const email = emailInput.value;
     const password = passwordInput.value;
 
     submitButton.disabled = true;
     submitButton.textContent = 'Signing In...';
     errorDiv.classList.add('hidden');
+    resendDiv.classList.add('hidden');
 
     try {
         const { data, error } = await db.auth.signInWithPassword({
@@ -53,20 +60,40 @@ loginForm.addEventListener('submit', async (event) => {
             password: password,
         });
 
-        if (error) throw error;
-
-        window.location.href = '/admin.html';
+        if (error) {
+            // This is the key part: check for the specific error
+            if (error.message.includes('Email not confirmed')) {
+                resendDiv.classList.remove('hidden');
+                const resendBtn = document.getElementById('resendBtn');
+                resendBtn.onclick = async () => {
+                    resendBtn.disabled = true;
+                    resendBtn.textContent = 'Sending...';
+                    const { error: resendError } = await db.auth.resend({
+                        type: 'signup',
+                        email: email,
+                    });
+                    if (resendError) {
+                        resendBtn.textContent = `Error: ${resendError.message}`;
+                    } else {
+                        resendDiv.innerHTML = '✅ A new confirmation link has been sent to your email!';
+                    }
+                };
+            } else {
+                throw error; // Throw other errors to be caught below
+            }
+        } else {
+             window.location.href = '/admin.html';
+        }
 
     } catch (error) {
         console.error('Login Error:', error);
         errorDiv.textContent = `Error: ${error.message}`;
         errorDiv.classList.remove('hidden');
-
+    } finally {
         submitButton.disabled = false;
         submitButton.textContent = 'Sign in';
     }
 });
-
 // Handle password visibility toggle
 togglePassword.addEventListener('click', () => {
   const isPassword = passwordInput.type === 'password';
