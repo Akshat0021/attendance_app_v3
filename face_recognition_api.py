@@ -131,25 +131,35 @@ def mass_attendance_page():
 
 @app.route('/process_image', methods=['POST'])
 def process_class_image():
+    print("--- INFO: /process_image endpoint hit. ---")
     if 'image' not in request.files or 'section_id' not in request.form:
+        print("--- ERROR: Missing image or section_id in request. ---")
         return jsonify({'error': 'Missing image or section_id'}), 400
     
     section_id = request.form['section_id']
+    print(f"--- INFO: Processing request for section_id: {section_id} ---")
     try:
+        print("--- STEP 1: Attempting to fetch students from Supabase... ---")
         response = supabase.table('students').select('id, name, roll_number, face_embedding').eq('section_id', section_id).not_.is_('face_embedding', 'null').execute()
-        if not response.data: return jsonify({'error': "No students with faces registered."}), 404
-        
+        if not response.data: 
+            print(f"--- WARNING: No students with face embeddings found for section_id {section_id}. ---")
+            return jsonify({'error': "No students with faces registered."}), 404
+        print(f"--- SUCCESS: Fetched {len(response.data)} students from Supabase. ---")
+
         known_students_data = response.data
         student_map = {s['id']: {'name': s['name'], 'roll_number': s['roll_number']} for s in known_students_data}
         known_student_ids = [s['id'] for s in known_students_data]
         embeddings_from_db = [json.loads(s['face_embedding']) for s in known_students_data if s['face_embedding']]
         known_embeddings = np.array(embeddings_from_db, dtype=np.float32)
-
+        print("--- STEP 2: Reading and decoding the uploaded image... ---")
         file = request.files['image'].read()
         npimg = np.frombuffer(file, np.uint8)
         img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+        print("--- SUCCESS: Image decoded. ---")
+
+        print("--- STEP 3: Running face detection model on the image... ---")
         detected_faces = face_analysis_model.get(img)
-        
+        print(f"--- SUCCESS: Detected {len(detected_faces)} faces in the image. ---")
         present_student_ids_with_scores = {}
         for face in detected_faces:
             box = face.bbox.astype(int)
