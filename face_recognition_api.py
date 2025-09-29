@@ -129,82 +129,98 @@ def get_embedding():
 def mass_attendance_page():
     return render_template('mass-attendance.html')
 
+# @app.route('/process_image', methods=['POST'])
+# def process_class_image():
+#     print("--- INFO: /process_image endpoint hit. ---")
+#     if 'image' not in request.files or 'section_id' not in request.form:
+#         print("--- ERROR: Missing image or section_id in request. ---")
+#         return jsonify({'error': 'Missing image or section_id'}), 400
+    
+#     section_id = request.form['section_id']
+#     print(f"--- INFO: Processing request for section_id: {section_id} ---")
+#     try:
+#         print("--- STEP 1: Attempting to fetch students from Supabase... ---")
+#         response = supabase.table('students').select('id, name, roll_number, face_embedding').eq('section_id', section_id).not_.is_('face_embedding', 'null').execute()
+#         if not response.data: 
+#             print(f"--- WARNING: No students with face embeddings found for section_id {section_id}. ---")
+#             return jsonify({'error': "No students with faces registered."}), 404
+#         print(f"--- SUCCESS: Fetched {len(response.data)} students from Supabase. ---")
+
+#         known_students_data = response.data
+#         student_map = {s['id']: {'name': s['name'], 'roll_number': s['roll_number']} for s in known_students_data}
+#         known_student_ids = [s['id'] for s in known_students_data]
+#         embeddings_from_db = [json.loads(s['face_embedding']) for s in known_students_data if s['face_embedding']]
+#         known_embeddings = np.array(embeddings_from_db, dtype=np.float32)
+#         print("--- STEP 2: Reading and decoding the uploaded image... ---")
+#         file = request.files['image'].read()
+#         npimg = np.frombuffer(file, np.uint8)
+#         img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+#         print("--- SUCCESS: Image decoded. ---")
+
+#         print("--- STEP 3: Running face detection model on the image... ---")
+#         detected_faces = face_analysis_model.get(img)
+#         print(f"--- SUCCESS: Detected {len(detected_faces)} faces in the image. ---")
+#         present_student_ids_with_scores = {}
+#         for face in detected_faces:
+#             box = face.bbox.astype(int)
+#             matched_id, score = find_best_match(face.embedding, known_embeddings, known_student_ids)
+            
+#             if matched_id:
+#                 if matched_id not in present_student_ids_with_scores or score > present_student_ids_with_scores[matched_id]:
+#                     present_student_ids_with_scores[matched_id] = score
+                
+#                 student_name = student_map[matched_id]['name']
+#                 confidence = convert_score_to_percentage(score)
+#                 label = f"{student_name.split(' ')[0]} ({confidence}%)"
+#                 color = (0, 255, 0)
+#                 cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]), color, 2)
+#                 cv2.putText(img, label, (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+#             else:
+#                 color = (0, 0, 255)
+#                 cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]), color, 2)
+#                 cv2.putText(img, "Unknown", (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+
+#         present_ids = list(present_student_ids_with_scores.keys())
+        
+#         mark_attendance_in_db(present_ids)
+
+#         all_student_ids_in_section = set(known_student_ids)
+#         present_student_ids_set = set(present_ids)
+#         absent_student_ids_for_display = all_student_ids_in_section - present_student_ids_set
+        
+#         _, buffer = cv2.imencode('.jpg', img)
+#         img_str = base64.b64encode(buffer).decode('utf-8')
+#         processed_image_data_url = f"data:image/jpeg;base64,{img_str}"
+
+#         present_students = [{'name': student_map[sid]['name'], 'roll_number': student_map[sid]['roll_number'], 'confidence': convert_score_to_percentage(score)} for sid, score in present_student_ids_with_scores.items()]
+#         absent_students_for_display = [student_map[sid] for sid in absent_student_ids_for_display]
+        
+#         return jsonify({
+#             'present_students': sorted(present_students, key=lambda x: x.get('name', '')),
+#             'absent_students': sorted(absent_students_for_display, key=lambda x: x.get('name', '')),
+#             'unknown_faces': len(detected_faces) - len(present_ids),
+#             'processed_image': processed_image_data_url
+#         })
+
+#     except Exception as e:
+#         print(f"❌ ERROR in /process_image: {e}\n{traceback.format_exc()}")
+#         return jsonify({'error': 'Internal server error.'}), 500
 @app.route('/process_image', methods=['POST'])
 def process_class_image():
-    print("--- INFO: /process_image endpoint hit. ---")
-    if 'image' not in request.files or 'section_id' not in request.form:
-        print("--- ERROR: Missing image or section_id in request. ---")
-        return jsonify({'error': 'Missing image or section_id'}), 400
+    # This simplified function only checks if the request reached the endpoint.
+    print("--- /process_image endpoint was successfully reached! ---")
     
-    section_id = request.form['section_id']
-    print(f"--- INFO: Processing request for section_id: {section_id} ---")
-    try:
-        print("--- STEP 1: Attempting to fetch students from Supabase... ---")
-        response = supabase.table('students').select('id, name, roll_number, face_embedding').eq('section_id', section_id).not_.is_('face_embedding', 'null').execute()
-        if not response.data: 
-            print(f"--- WARNING: No students with face embeddings found for section_id {section_id}. ---")
-            return jsonify({'error': "No students with faces registered."}), 404
-        print(f"--- SUCCESS: Fetched {len(response.data)} students from Supabase. ---")
+    section_id = request.form.get('section_id', 'Not Found')
+    image_file = request.files.get('image')
 
-        known_students_data = response.data
-        student_map = {s['id']: {'name': s['name'], 'roll_number': s['roll_number']} for s in known_students_data}
-        known_student_ids = [s['id'] for s in known_students_data]
-        embeddings_from_db = [json.loads(s['face_embedding']) for s in known_students_data if s['face_embedding']]
-        known_embeddings = np.array(embeddings_from_db, dtype=np.float32)
-        print("--- STEP 2: Reading and decoding the uploaded image... ---")
-        file = request.files['image'].read()
-        npimg = np.frombuffer(file, np.uint8)
-        img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
-        print("--- SUCCESS: Image decoded. ---")
+    print(f"--- Received section_id: {section_id} ---")
+    print(f"--- Received image file: {image_file.filename if image_file else 'No File'} ---")
+    
+    return jsonify({'status': 'ok', 'message': 'Endpoint reached successfully'}), 200
 
-        print("--- STEP 3: Running face detection model on the image... ---")
-        detected_faces = face_analysis_model.get(img)
-        print(f"--- SUCCESS: Detected {len(detected_faces)} faces in the image. ---")
-        present_student_ids_with_scores = {}
-        for face in detected_faces:
-            box = face.bbox.astype(int)
-            matched_id, score = find_best_match(face.embedding, known_embeddings, known_student_ids)
-            
-            if matched_id:
-                if matched_id not in present_student_ids_with_scores or score > present_student_ids_with_scores[matched_id]:
-                    present_student_ids_with_scores[matched_id] = score
-                
-                student_name = student_map[matched_id]['name']
-                confidence = convert_score_to_percentage(score)
-                label = f"{student_name.split(' ')[0]} ({confidence}%)"
-                color = (0, 255, 0)
-                cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]), color, 2)
-                cv2.putText(img, label, (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-            else:
-                color = (0, 0, 255)
-                cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]), color, 2)
-                cv2.putText(img, "Unknown", (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-
-        present_ids = list(present_student_ids_with_scores.keys())
-        
-        mark_attendance_in_db(present_ids)
-
-        all_student_ids_in_section = set(known_student_ids)
-        present_student_ids_set = set(present_ids)
-        absent_student_ids_for_display = all_student_ids_in_section - present_student_ids_set
-        
-        _, buffer = cv2.imencode('.jpg', img)
-        img_str = base64.b64encode(buffer).decode('utf-8')
-        processed_image_data_url = f"data:image/jpeg;base64,{img_str}"
-
-        present_students = [{'name': student_map[sid]['name'], 'roll_number': student_map[sid]['roll_number'], 'confidence': convert_score_to_percentage(score)} for sid, score in present_student_ids_with_scores.items()]
-        absent_students_for_display = [student_map[sid] for sid in absent_student_ids_for_display]
-        
-        return jsonify({
-            'present_students': sorted(present_students, key=lambda x: x.get('name', '')),
-            'absent_students': sorted(absent_students_for_display, key=lambda x: x.get('name', '')),
-            'unknown_faces': len(detected_faces) - len(present_ids),
-            'processed_image': processed_image_data_url
-        })
-
-    except Exception as e:
-        print(f"❌ ERROR in /process_image: {e}\n{traceback.format_exc()}")
-        return jsonify({'error': 'Internal server error.'}), 500
+#
+# --- Keep the rest of your file, including all other functions, exactly the same ---
+#
 
 @app.route('/recognize_single_student', methods=['POST'])
 def recognize_single_student():
