@@ -189,7 +189,7 @@ function updateDateTime() {
 // ====================================================
 async function startCamera() {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     video.srcObject = stream;
     await video.play();
     document.getElementById('camera-status').style.background = '#06b6d4';
@@ -426,3 +426,4 @@ window.addEventListener('beforeunload', () => {
     }
     stopRecognitionLoop();
 });
+
